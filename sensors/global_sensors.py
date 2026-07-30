@@ -19,15 +19,17 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.const import UnitOfEnergy, UnitOfPower
 
 from ..const import (
     DEYE_TOTAL_POWER_W,
+    INSTALLATION_TOTAL_POWER_W,
     SENSOR_PV_HOURLY_FORECAST,
     SENSOR_PV_POTENTIAL_TODAY,
     SENSOR_PV_POTENTIAL_TOMORROW,
     SENSOR_PV_TOTAL_POTENTIAL_POWER,
+    SOURCE_ACTIVE_FORECAST_SOLAR,
 )
 from ..entity import PVPotentialEntity
 
@@ -44,8 +46,9 @@ class PVTotalPotentialSensor(PVPotentialEntity, SensorEntity):
     """
 
     _attr_native_unit_of_measurement = UnitOfPower.WATT
-    _attr_device_class = None  # TODO Phase 1 : SensorDeviceClass.POWER
-    _attr_state_class = None  # TODO Phase 1 : SensorStateClass.MEASUREMENT
+    _attr_device_class = SensorDeviceClass.POWER
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:solar-power-variant"
 
     def __init__(self, coordinator: Any) -> None:
         """Initialise le sensor total potentiel.
@@ -54,24 +57,36 @@ class PVTotalPotentialSensor(PVPotentialEntity, SensorEntity):
             coordinator: Le DataUpdateCoordinator.
         """
         super().__init__(coordinator, SENSOR_PV_TOTAL_POTENTIAL_POWER)
+        self._attr_name = "PV Total Potential Power"
 
     @property
     def native_value(self) -> float | None:
-        """Retourne le potentiel total (DEYE + ATON).
+        """Retourne le potentiel total (DEYE + ATON estimé) en W."""
+        data = self.coordinator.data
+        if not data or "hourly_forecast" not in data:
+            return None
 
-        TODO Phase 1 : récupérer depuis coordinator.data
-        """
-        # TODO Phase 1 : implémenter
-        return None
+        for entry in data["hourly_forecast"]:
+            if entry.get("is_current_hour"):
+                return round(entry.get("pv_total_w", 0.0), 1)
+
+        return 0.0
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
-        """Retourne les métadonnées de source (source_active).
+        """Retourne les métadonnées de source (source_active)."""
+        data = self.coordinator.data
+        if not data:
+            return None
 
-        TODO Phase 1 : ajouter source_active
-        """
-        # TODO Phase 1 : implémenter
-        return None
+        return {
+            "source_active": data.get(
+                "source_active", SOURCE_ACTIVE_FORECAST_SOLAR
+            ),
+            "total_capacity_w": INSTALLATION_TOTAL_POWER_W,
+            "deye_capacity_w": DEYE_TOTAL_POWER_W,
+            "aton_capacity_w": INSTALLATION_TOTAL_POWER_W - DEYE_TOTAL_POWER_W,
+        }
 
 
 class PVPotentialTodaySensor(PVPotentialEntity, SensorEntity):
@@ -84,8 +99,9 @@ class PVPotentialTodaySensor(PVPotentialEntity, SensorEntity):
     """
 
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
-    _attr_device_class = None  # TODO Phase 1 : SensorDeviceClass.ENERGY
-    _attr_state_class = None  # TODO Phase 1 : SensorStateClass.TOTAL
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_state_class = SensorStateClass.TOTAL
+    _attr_icon = "mdi:solar-power"
 
     def __init__(self, coordinator: Any) -> None:
         """Initialise le sensor énergie aujourd'hui.
@@ -94,24 +110,30 @@ class PVPotentialTodaySensor(PVPotentialEntity, SensorEntity):
             coordinator: Le DataUpdateCoordinator.
         """
         super().__init__(coordinator, SENSOR_PV_POTENTIAL_TODAY)
+        self._attr_name = "PV Potential Today"
 
     @property
     def native_value(self) -> float | None:
-        """Retourne l'énergie potentielle du jour (kWh).
-
-        TODO Phase 1 : intégrer les prévisions horaires du jour
-        """
-        # TODO Phase 1 : implémenter
-        return None
+        """Retourne l'énergie potentielle du jour (kWh)."""
+        data = self.coordinator.data
+        if not data:
+            return None
+        return data.get("today_kwh", 0.0)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
-        """Retourne les métadonnées de source (source_active, confidence).
+        """Retourne les métadonnées de source (source_active, confidence)."""
+        data = self.coordinator.data
+        if not data:
+            return None
 
-        TODO Phase 1 : implémenter
-        """
-        # TODO Phase 1 : implémenter
-        return None
+        return {
+            "source_active": data.get(
+                "source_active", SOURCE_ACTIVE_FORECAST_SOLAR
+            ),
+            "confidence": data.get("confidence", 0.0),
+            "last_update": data.get("last_update"),
+        }
 
 
 class PVPotentialTomorrowSensor(PVPotentialEntity, SensorEntity):
@@ -124,8 +146,9 @@ class PVPotentialTomorrowSensor(PVPotentialEntity, SensorEntity):
     """
 
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
-    _attr_device_class = None  # TODO Phase 1 : SensorDeviceClass.ENERGY
-    _attr_state_class = None  # TODO Phase 1 : SensorStateClass.TOTAL
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_state_class = SensorStateClass.TOTAL
+    _attr_icon = "mdi:solar-power-outline"
 
     def __init__(self, coordinator: Any) -> None:
         """Initialise le sensor énergie demain.
@@ -134,35 +157,44 @@ class PVPotentialTomorrowSensor(PVPotentialEntity, SensorEntity):
             coordinator: Le DataUpdateCoordinator.
         """
         super().__init__(coordinator, SENSOR_PV_POTENTIAL_TOMORROW)
+        self._attr_name = "PV Potential Tomorrow"
 
     @property
     def native_value(self) -> float | None:
-        """Retourne l'énergie potentielle du lendemain (kWh).
-
-        TODO Phase 1 : intégrer les prévisions horaires du lendemain
-        """
-        # TODO Phase 1 : implémenter
-        return None
+        """Retourne l'énergie potentielle du lendemain (kWh)."""
+        data = self.coordinator.data
+        if not data:
+            return None
+        return data.get("tomorrow_kwh", 0.0)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
-        """Retourne les métadonnées de source (source_active, confidence).
+        """Retourne les métadonnées de source (source_active, confidence)."""
+        data = self.coordinator.data
+        if not data:
+            return None
 
-        TODO Phase 1 : implémenter
-        """
-        # TODO Phase 1 : implémenter
-        return None
+        return {
+            "source_active": data.get(
+                "source_active", SOURCE_ACTIVE_FORECAST_SOLAR
+            ),
+            "confidence": data.get("confidence", 0.0),
+            "last_update": data.get("last_update"),
+        }
 
 
 class PVHourlyForecastSensor(PVPotentialEntity, SensorEntity):
     """Sensor principal de prévision horaire (48h × 5 MPPT + météo).
 
     État = puissance potentielle de l'heure courante (W).
-    Attributs = structure JSON complète (voir architecture v3 §7) :
+    Attributs = structure JSON complète :
         - forecast : liste horaire (48h) avec détail par MPPT
-        - forecast_today_kwh, forecast_tomorrow_kwh
-        - source_active, confidence, sources_detail
-        - last_update
+        - forecast_today_kwh : énergie du jour (kWh)
+        - forecast_tomorrow_kwh : énergie du lendemain (kWh)
+        - source_active : "forecast_solar"
+        - confidence : indice [0, 1]
+        - sources_detail : détail des sources (Forecast.Solar + météo)
+        - last_update : timestamp dernière mise à jour
 
     C'est le sensor le plus riche — il contient toute la prévision.
 
@@ -171,8 +203,9 @@ class PVHourlyForecastSensor(PVPotentialEntity, SensorEntity):
     """
 
     _attr_native_unit_of_measurement = UnitOfPower.WATT
-    _attr_device_class = None  # TODO Phase 1 : SensorDeviceClass.POWER
-    _attr_state_class = None  # TODO Phase 1 : SensorStateClass.MEASUREMENT
+    _attr_device_class = SensorDeviceClass.POWER
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:weather-sunny"
 
     def __init__(self, coordinator: Any) -> None:
         """Initialise le sensor de prévision horaire.
@@ -181,21 +214,31 @@ class PVHourlyForecastSensor(PVPotentialEntity, SensorEntity):
             coordinator: Le DataUpdateCoordinator.
         """
         super().__init__(coordinator, SENSOR_PV_HOURLY_FORECAST)
+        self._attr_name = "PV Hourly Forecast"
 
     @property
     def native_value(self) -> float | None:
         """Retourne la puissance potentielle de l'heure courante (W).
 
-        TODO Phase 1 : récupérer l'heure courante depuis coordinator.data
+        Cherche l'entrée is_current_hour dans le forecast et retourne
+        pv_total_w.
         """
-        # TODO Phase 1 : implémenter
-        return None
+        data = self.coordinator.data
+        if not data or "hourly_forecast" not in data:
+            return None
+
+        for entry in data["hourly_forecast"]:
+            if entry.get("is_current_hour"):
+                return round(entry.get("pv_total_w", 0.0), 1)
+
+        # Si pas d'heure courante trouvée, retourner 0
+        return 0.0
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
         """Retourne la structure JSON complète de prévision (48h).
 
-        Structure (voir architecture v3 §7) :
+        Structure :
             - forecast : liste horaire (48h) avec détail MPPT + météo
             - forecast_today_kwh : énergie du jour (kWh)
             - forecast_tomorrow_kwh : énergie du lendemain (kWh)
@@ -203,11 +246,22 @@ class PVHourlyForecastSensor(PVPotentialEntity, SensorEntity):
             - confidence : indice [0, 1]
             - sources_detail : détail des sources (Forecast.Solar + météo)
             - last_update : timestamp dernière mise à jour
-
-        TODO Phase 1 : construire la structure JSON depuis coordinator.data
         """
-        # TODO Phase 1 : implémenter
-        return None
+        data = self.coordinator.data
+        if not data:
+            return None
+
+        return {
+            "forecast": data.get("hourly_forecast", []),
+            "forecast_today_kwh": data.get("today_kwh", 0.0),
+            "forecast_tomorrow_kwh": data.get("tomorrow_kwh", 0.0),
+            "source_active": data.get(
+                "source_active", SOURCE_ACTIVE_FORECAST_SOLAR
+            ),
+            "confidence": data.get("confidence", 0.0),
+            "sources_detail": data.get("sources_detail", {}),
+            "last_update": data.get("last_update"),
+        }
 
 
 def create_global_sensors(coordinator: Any) -> list[SensorEntity]:

@@ -11,7 +11,6 @@ Date : 30 juillet 2026
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -43,15 +42,18 @@ async def async_setup_entry(
         async_add_entities: Callback pour ajouter les entities.
     """
     _LOGGER.info(
-        "Configuration des %d sensors PV Potential Forecast", len(ALL_PHASE1_SENSORS)
+        "Configuration des %d sensors PV Potential Forecast",
+        len(ALL_PHASE1_SENSORS),
     )
 
-    # TODO Phase 1 : récupérer le coordinator depuis hass.data
-    # coordinator = hass.data[DOMAIN][entry.entry_id]
+    # Récupérer le coordinator depuis hass.data
+    coordinator = hass.data[DOMAIN][entry.entry_id]
 
-    # TODO Phase 1 : créer et enregistrer les 11 sensors
-    # entities = []
-    # entities.extend(create_deye_sensors(coordinator))
-    # entities.extend(create_aton_sensors(coordinator))
-    # entities.extend(create_global_sensors(coordinator))
-    # async_add_entities(entities)
+    # Créer et enregistrer les 11 sensors
+    entities = []
+    entities.extend(create_deye_sensors(coordinator))
+    entities.extend(create_aton_sensors(coordinator, hass))
+    entities.extend(create_global_sensors(coordinator))
+
+    _LOGGER.info("Enregistrement de %d sensors", len(entities))
+    async_add_entities(entities)

@@ -21,6 +21,7 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
+from .coordinator import PVForecastCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -31,32 +32,35 @@ PLATFORMS: list[Platform] = [Platform.SENSOR]
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Configure la custom integration à partir d'un ConfigEntry.
 
+    Étapes :
+        1. Créer le PVForecastCoordinator
+        2. Lancer le premier refresh
+        3. Stocker le coordinator dans hass.data
+        4. Forwarder les plateformes (sensor)
+
     Args:
         hass: Instance Home Assistant.
         entry: Configuration entry créée par le config_flow.
 
     Returns:
         True si la configuration a réussi, False sinon.
-
-    TODO Phase 1 :
-        - Instancier le ForecastSolarProvider
-        - Instancier le WeatherProvider (Vevor + Météo-France fallback)
-        - Instancier le ForecastSolarRateLimiter
-        - Créer le PVPotentialCoordinator (DataUpdateCoordinator)
-        - Stocker le coordinator dans hass.data[DOMAIN][entry.entry_id]
-        - Forwarder les plateformes (sensor)
     """
     _LOGGER.info(
         "Configuration de PV Potential Forecast (entry_id=%s)", entry.entry_id
     )
 
-    # TODO Phase 1 : instancier le coordinator
-    # coordinator = PVPotentialCoordinator(hass, ...)
-    # hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
-    # await coordinator.async_config_entry_first_refresh()
+    # Créer le coordinator
+    coordinator = PVForecastCoordinator(hass, entry)
 
-    # TODO Phase 1 : forwarder les plateformes
-    # await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    # Stocker le coordinator dans hass.data avant le premier refresh
+    hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN][entry.entry_id] = coordinator
+
+    # Lancer le premier refresh
+    await coordinator.async_config_entry_first_refresh()
+
+    # Forwarder les plateformes (sensor)
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     return True
 
@@ -75,10 +79,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "Déchargement de PV Potential Forecast (entry_id=%s)", entry.entry_id
     )
 
-    # TODO Phase 1 : décharger les plateformes
-    # unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    # if unload_ok:
-    #     hass.data[DOMAIN].pop(entry.entry_id)
-    # return unload_ok
+    # Décharger les plateformes
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
-    return True
+    if unload_ok:
+        hass.data[DOMAIN].pop(entry.entry_id)
+
+    return unload_ok
