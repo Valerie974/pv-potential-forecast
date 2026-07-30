@@ -30,6 +30,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from ..astronomy import is_night
 from ..calculations.bifacial import calculate_bifacial_gain
 from ..calculations.temperature import (
     calculate_cell_temperature,
@@ -40,6 +41,9 @@ from ..const import (
     ATON_PV1_CAPACITY_W,
     ATON_PV2_AZIMUTH_API,
     ATON_PV2_CAPACITY_W,
+    DEFAULT_LATITUDE,
+    DEFAULT_LONGITUDE,
+    DEFAULT_TIMEZONE,
     DEYE_PV1_AZIMUTH_API,
     DEYE_PV1_CAPACITY_W,
     DEYE_PV2_AZIMUTH_API,
@@ -342,8 +346,14 @@ class SingleSourceStrategy:
 
         Returns:
             Puissance potentielle corrigée (W) pour l'heure courante.
-            Retourne 0.0 si aucune donnée disponible.
+            Retourne 0.0 si aucune donnée disponible OU si c'est la nuit.
         """
+        # Vérification astronomique : forcer 0 W la nuit
+        # Utiliser l'heure UTC pour la comparaison astronomique (is_night gère la conversion)
+        now = datetime.now(timezone.utc)
+        if is_night(now, DEFAULT_LATITUDE, DEFAULT_LONGITUDE, DEFAULT_TIMEZONE):
+            return 0.0
+
         # Récupérer les données météo si non fournies
         if weather_data is None:
             weather = await self._weather_provider.get_current_weather()
@@ -359,7 +369,6 @@ class SingleSourceStrategy:
         mppt_config = self._get_mppt_config(mppt_name)
 
         # Trouver la puissance pour l'heure courante
-        now = datetime.now(timezone.utc)
         current_power = self._get_power_for_hour(forecast.watts, now)
 
         if current_power is None:
@@ -546,43 +555,73 @@ class SingleSourceStrategy:
                     self._weather_provider.get_hourly_weather(
                         target_time=dt, is_current_hour=True
                     )
-                )
-            else:
-                hour_weather = await (
-                    self._weather_provider.get_hourly_weather(
-                        target_time=dt, is_current_hour=False
-                    )
-                )
+                for ts_str in sorted_ts:
+                    dt = self._parse_timestamp(ts_str)
+                    is_current = dt.replace(
+                        minute=0, second=0, microsecond=0
+                    ) == target_hour
 
-            hour_temp = hour_weather.get("temperature_c")
-            hour_irradiance = hour_weather.get("irradiance_ghi")
+                    # Vérification astronomique : forcer 0 W la nuit pour cette heure
+                    if is_night(dt, DEFAULT_LATITUDE, DEFAULT_LONGITUDE, DEFAULT_TIMEZONE):
+                        # La nuit : tous les MPPT à 0 W
+                        result = HourlyResult(
+                            datetime=dt.isoformat(),
+                            is_current_hour=is_current,
+                            deye_mppt1_w=0.0,
+                            deye_mppt2_w=0.0,
+                            deye_mppt3_w=0.0,
+                            deye_total_w=0.0,
+                            aton_estimated_w=0.0,
+                            aton_dc_w=0.0,
+                            pv_total_w=0.0,
+                            weather={},
+                        )
+                        results.append(result)
+                        continue
 
-            # Calculer la puissance pour chaque MPPT
-            mppt_powers: dict[str, float] = {}
+                    # Données météo pour cette heure
+                    if is_current:
+                        hour_weather = await (
+                            self._weather_provider.get_hourly_weather(
+                                target_time=dt, is_current_hour=True
+                            )
+                        )
+                    else:
+                        hour_weather = await (
+                            self._weather_provider.get_hourly_weather(
+                                target_time=dt, is_current_hour=False
+                            )
+                        )
 
-            for mppt_name, mppt_config in MPPT_BY_NAME.items():
-                forecast = all_forecasts.get(mppt_name)
-                if forecast is None:
-                    mppt_powers[mppt_name] = 0.0
-                    continue
+                    hour_temp = hour_weather.get("temperature_c")
+                    hour_irradiance = hour_weather.get("irradiance_ghi")
 
-                power = forecast.watts.get(ts_str, 0.0)
+                    # Calculer la puissance pour chaque MPPT
+                    mppt_powers: dict[str, float] = {}
 
-                # Pour l'heure courante, utiliser l'irradiance Vevor
-                # pour la correction température. Pour les heures futures,
-                # irradiance est null — on utilise la température seule.
-                temp_for_correction = hour_temp if hour_temp else temperature_c
-                irr_for_correction = (
-                    hour_irradiance if hour_irradiance else irradiance_ghi
-                )
+                    for mppt_name, mppt_config in MPPT_BY_NAME.items():
+                        forecast = all_forecasts.get(mppt_name)
+                        if forecast is None:
+                            mppt_powers[mppt_name] = 0.0
+                            continue
 
-                corrected = self.apply_corrections(
-                    power,
-                    mppt_config,
-                    temp_for_correction,
-                    irr_for_correction,
-                )
-                mppt_powers[mppt_name] = corrected
+                        power = forecast.watts.get(ts_str, 0.0)
+
+                        # Pour l'heure courante, utiliser l'irradiance Vevor
+                        # pour la correction température. Pour les heures futures,
+                        # irradiance est null — on utilise la température seule.
+                        temp_for_correction = hour_temp if hour_temp else temperature_c
+                        irr_for_correction = (
+                            hour_irradiance if hour_irradiance else irradiance_ghi
+                        )
+
+                        corrected = self.apply_corrections(
+                            power,
+                            mppt_config,
+                            temp_for_correction,
+                            irr_for_correction,
+                        )
+                        mppt_powers[mppt_name] = corrected
 
             # Agréger par onduleur
             deye_total = (
