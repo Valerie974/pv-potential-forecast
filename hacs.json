@@ -1,0 +1,7 @@
+{
+  "country": ["FR"],
+  "domains": ["sensor"],
+  "homeassistant": "2024.1.0",
+  "name": "PV Potential Forecast",
+  "render_readme": true
+}

@@ -1,0 +1,9 @@
+{
+  "domain": "pv_potential_forecast",
+  "name": "PV Potential Forecast",
+  "documentation": "https://github.com/Valerie974/pv-potential-forecast",
+  "dependencies": [],
+  "config_flow": true,
+  "version": "0.1.0",
+  "requirements": []
+}
